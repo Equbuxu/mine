@@ -1,0 +1,12 @@
+{
+    "Lua.diagnostics.globals": [
+        "turtle",
+        "fs",
+        "read",
+        "textutils",
+        "http",
+        "write",
+        "term",
+        "colors"
+    ]
+}
