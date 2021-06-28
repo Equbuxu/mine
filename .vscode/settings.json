@@ -7,6 +7,9 @@
         "http",
         "write",
         "term",
-        "colors"
+        "colors",
+        "bit32",
+        "parallel",
+        "vector"
     ]
 }

@@ -11,10 +11,10 @@ cfg.localConfig = {
 	--false: build walls/floor/ceiling everywhere, true: only where there is fluid
 	plugFluidsOnly = true,
 	--maximum taxicab distance from enterance point when collecting ores, 0 = disable ore traversal
-	oreTraversalRadius = 5,
+	oreTraversalRadius = 0,
 	--layer mining order, use "z" for branch mining, "y" for anything else
 	--"y" - mine top to bottom layer by layer, "z" - mine forward in vertical slices
-	layerSeparationAxis="z",
+	layerSeparationAxis="y",
 	--false: use regular chests, true: use entangled chests
 	--if true, the turtle will place a single entangled chest to drop off items and break it afterwards.
 	--tested with chests from https://www.curseforge.com/minecraft/mc-mods/kibe
@@ -85,6 +85,11 @@ local PATHFIND_INSIDE_AREA = 0
 local PATHFIND_OUTSIDE_AREA = 1
 local PATHFIND_INSIDE_NONPRESERVED_AREA = 2
 local PATHFIND_ANYWHERE_NONPRESERVED = 3
+
+local SUCCESS = 0
+local FAILED_NONONE_COMPONENTCOUNT = 1
+local FAILED_TURTLE_NOTINREGION = 2
+local FAILED_REGION_EMPTY = 4
 
 local REFUEL_THRESHOLD = 500
 local RETRY_DELAY = 3
@@ -399,6 +404,52 @@ end
 --#region SHAPE LIBRARY----
 
 local shapes = {}
+
+shapes.custom = {
+	command = "custom",
+	shortDesc = "custom <filename>",
+	longDesc = "Executes a function named \"generate\" from the specified file and uses the data it returns as a shape",
+	args = {"str"},
+	generate = function(filename)
+		local env = {
+			table=table,
+			fs=fs,
+			http=http,
+			io=io,
+			math=math,
+			os=os,
+			parallel=parallel,
+			string=string,
+			vector=vector,
+			textutils=textutils
+		}
+		local chunk, err = loadfile(filename, "bt", env)
+		if err then
+			helper.printError("Couldn't load file:", err);
+			return {}
+		end
+		chunk();
+		if type(env.generate) ~= "function" then
+			helper.printError("File does not contain generate function")
+			return {}
+		end
+		local generated = env.generate()
+		if type(generated) ~= "table" then
+			helper.printError("Generate function didn't return a table")
+			return {}
+		end
+		local blocks = {}
+		for _, value in ipairs(generated) do
+			if type(value.x) ~= "number" or type(value.y) ~= "number" or type(value.z) ~= "number" then
+				helper.printError("Invalid coordinates entry:", textutils.serialize(value))
+				return {}
+			end
+			blocks[helper.getIndex(value.x, value.y, value.z)] = {x = value.x, y = value.y, z = value.z}
+		end
+		return blocks
+	end
+}
+
 shapes.sphere = {
 	command = "sphere",
 	shortDesc = "sphere <diameter>",
@@ -594,7 +645,6 @@ region.findConnectedComponents = function(allBlocks)
 	for key,value in pairs(allBlocks) do
 		if not visited[key] then
 			local component = {}
-			local componentSize = 0
 			local toVisit = {[key] = value}
 			while true do
 				local newToVisit = {}
@@ -603,7 +653,6 @@ region.findConnectedComponents = function(allBlocks)
 					didSomething = true
 					visited[currentKey] = true
 					component[currentKey] = current
-					componentSize = componentSize + 1
 					local minusX = helper.getIndex(current.x-1, current.y, current.z)
 					local plusX = helper.getIndex(current.x+1, current.y, current.z)
 					local minusY = helper.getIndex(current.x, current.y-1, current.z)
@@ -629,23 +678,10 @@ region.findConnectedComponents = function(allBlocks)
 				toVisit = newToVisit
 				if not didSomething then break end
 			end
-			components[componentSize] = component
+			table.insert(components, component)
 		end
 	end
 	return components
-end
-
-region.findBiggestConnectedComponent = function(allBlocks)
-	local components = region.findConnectedComponents(allBlocks)
-	local max = -1
-	local maxValue = nil
-	for key,value in pairs(components) do
-		if key > max then
-			max = key
-			maxValue = value
-		end
-	end
-	return maxValue
 end
 
 region.separateLayers = function(allBlocks, direction)
@@ -770,6 +806,23 @@ region.reserveChests = function(blocks)
 	end)
 
 	return {reserved=blocksCopy}
+end
+
+region.validateRegion = function(blocks)
+	local result = SUCCESS
+	--there must be only one connected component
+	local components = region.findConnectedComponents(blocks)
+	if helper.tableLength(components) == 0 then
+		result = result + FAILED_REGION_EMPTY
+	end
+	if helper.tableLength(components) > 1 then
+		result = result + FAILED_NONONE_COMPONENTCOUNT
+	end
+	--the turtle must be inside of the region
+	if not blocks[helper.getIndex(0,0,0)] then
+		result = result + FAILED_TURTLE_NOTINREGION
+	end
+	return result
 end
 
 --#endregion
@@ -999,6 +1052,13 @@ ui.tryShowHelp = function(input)
 end
 
 ui.testRange = function(range, value)
+	if range == "str" then
+		return "string"
+	end
+	if type(value) ~= "number" then
+		return false
+	end
+
 	local subRanges = helper.splitString(range, " ")
 	for _, range in ipairs(subRanges) do
 		local borders = helper.splitString(range, "..")
@@ -1030,17 +1090,19 @@ ui.parseArgs = function(argPattern, args)
 	for _,value in ipairs(args) do
 		local number = tonumber(value)
 		if not number then
-			return nil
+			table.insert(parsed, value)
 		end
 		table.insert(parsed, number)
 	end
 
 	for index,value in ipairs(argPattern) do
-		if not ui.testRange(value, parsed[index]) then
+		local result = ui.testRange(value, parsed[index])
+		if result == "string" then
+			parsed[index] = args[index]
+		elseif not result then
 			return nil
 		end
 	end
-
 	return parsed
 end
 
@@ -1089,6 +1151,21 @@ ui.promptForShape = function()
 		end
 	end
 	return shape
+end
+
+ui.showValidationError = function(validationResult) 
+	local error = "Invalid mining volume:";
+	if bit32.band(validationResult, FAILED_REGION_EMPTY) ~= 0 then
+		helper.printError("Invalid mining volume: \n\tVolume is empty")
+		return
+	end
+	if bit32.band(validationResult, FAILED_NONONE_COMPONENTCOUNT) ~= 0 then
+		error = error .. "\n\tVolume has multiple disconnected parts"
+	end
+	if bit32.band(validationResult, FAILED_TURTLE_NOTINREGION) ~= 0 then
+		error = error .. "\n\tTurtle (pos(0,0,0)) not in volume"
+	end
+	helper.printError(error)
 end
 
 --#endregion
@@ -1685,24 +1762,34 @@ local function executeDigging(layers, diggingArea, chestData, config)
 	tryDropOffThings(chestData, diggingArea, config.useEntangledChests, true)
 end
 
-local function launchDigging(config, default)
-	local shape = nil
-	if default then
-		shape = ui.parseProgram(config.defaultCommand)
-		if not shape then
-			helper.printError("defaultCommand is invalid")
-			default = false
+local function getValidatedRegion(config, default)
+	ui.printInfo()
+	ui.printProgramsInfo()
+	while true do
+		local shape = nil
+		if default then
+			shape = ui.parseProgram(config.defaultCommand)
+			if not shape then
+				helper.printError("defaultCommand is invalid")
+				default = false
+			end
 		end
-	end
 
-	if not default then
-		ui.printInfo()
-		ui.printProgramsInfo()
-		shape = ui.promptForShape()
-	end
+		if not default then
+			shape = ui.promptForShape()
+		end
 
-	local genRegion = shape.shape.generate(table.unpack(shape.args))
-	local diggingArea = region.findBiggestConnectedComponent(genRegion)
+		local genRegion = shape.shape.generate(table.unpack(shape.args))
+		local validationResult = region.validateRegion(genRegion)
+		if validationResult == SUCCESS then
+			return genRegion
+		end
+		ui.showValidationError(validationResult)
+	end
+end
+
+local function launchDigging(config, default)
+	local diggingArea = getValidatedRegion(config, default)
 	local layers = region.createLayersFromArea(diggingArea, config.layerSeparationAxis)
 	local chestData = region.reserveChests(diggingArea)
 	executeDigging(layers, diggingArea, chestData, config)
@@ -1715,9 +1802,8 @@ local function executeMineLoop(config)
 	while true do
 		--create a region to dig
 		local shape = ui.parseProgram(config.mineLoopCommand)
-		local genRegion = shape.shape.generate(table.unpack(shape.args))
-		genRegion = region.shiftRegion(genRegion, cumDelta)
-		local diggingArea = region.findBiggestConnectedComponent(genRegion)
+		local diggingArea = shape.shape.generate(table.unpack(shape.args))
+		diggingArea = region.shiftRegion(diggingArea, cumDelta)
 		local layers = region.createLayersFromArea(diggingArea, config.layerSeparationAxis)
 		local chestData = region.reserveChests(diggingArea)
 
@@ -1758,10 +1844,19 @@ local function executeMineLoop(config)
 end
 
 local function launchMineLoop(config, autostart)
-	if not ui.parseProgram(config.mineLoopCommand) then
+	helper.print("Verifying mineLoopCommand...")
+	local shape = ui.parseProgram(config.mineLoopCommand)
+	if not shape then
 		helper.printError("mineLoopCommand is invalid")
 		return
 	end
+	local areaToValidate = shape.shape.generate(table.unpack(shape.args))
+	local validationResult = region.validateRegion(areaToValidate)
+	if validationResult ~= SUCCESS then
+		ui.showValidationError(validationResult)
+		return
+	end
+
 	if not autostart then
 		ui.printInfo()
 		helper.print("Press Enter to start the loop")
