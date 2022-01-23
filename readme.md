@@ -1,6 +1,6 @@
 # An advanced mining program for ComputerCraft Turtles
 
-This program is capable of mining an arbitrary area while removing lava, automatically refueling itself, bringing the mined items into one place, and more (no auto torches though sandly).
+This program is capable of mining an arbitrary area while removing lava, automatically refueling itself, bringing the mined items into one place, and more (no auto torches though sadly).
 
 ## Basic usage
 
