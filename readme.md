@@ -4,7 +4,7 @@ This program is capable of mining an arbitrary area while removing lava, automat
 
 ## Basic usage
 
-1. Copy `mine.lua` into turtle's memory. Run `mine`. 
+1. Run `pastebin get 7uHd9pPx mine`. Run `mine`. 
 1. On startup, the program shows a bunch of info, such as fuel level, slots used for various items, etc.
 1. By default, three slots are assigned: Chests, Coal and Cobblestone.
 Chests are required since they are used to drop off mined items, but the cobblestone and coal slots can be left empty.
@@ -15,6 +15,7 @@ You can run `help <program>` to get a description of any specific program.
 Type `branch 5 20`. 
 The turtle should start mining a 20-block long tunnel in the direction it is facing. 
 The tunnel will have 5-block branches going to the left and right.
+Note that the order it mines the blocks in might seem a bit strange
 1. While mining, the turtle will go through ore veins without going further than 5 blocks from the area it's mining.
 1. The turtle will place chests near the place where it has started mining.
 
