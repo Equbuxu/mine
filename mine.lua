@@ -196,12 +196,20 @@ local wrapt = (function()
 end)()
 
 --#endregion
+--#region TYPE ALIASES---
+
+-- use https://marketplace.visualstudio.com/items?itemName=sumneko.lua for intellisense
+
+---@alias vec3 {x: number, y: number, z: number}
+---@alias vec3dir {x: number, y: number, z: number, direction: integer}
+
+--#endregion
 --#region DEBUG FUNCTIONS----
 
 local debug = {
 	dumpPoints = function(points, filename)
 		local file = fs.open(filename .. ".txt","w")
-		for key, value in pairs(points) do
+		for _, value in pairs(points) do
 			local line =
 				tostring(value.x)..","..
 				tostring(value.y)..","..
@@ -225,6 +233,8 @@ local debug = {
 		file.close()
 	end,
 
+	---@param points {[string]:vec3}
+	---@param filename string
 	dumpPath = function(points, filename)
 		local file = fs.open(filename .. ".txt","w")
 		for key, value in pairs(points) do
@@ -268,6 +278,8 @@ local debug = {
 --#endregion
 --#region HELPER FUNCTIONS----
 
+---@param dX number
+---@param dZ number
 helper.deltaToDirection = function(dX, dZ)
 	if dX > 0 then
 		return EAST
@@ -281,20 +293,29 @@ helper.deltaToDirection = function(dX, dZ)
 	error("Invalid delta", 2)
 end
 
+---@param T table
+---@return integer
 helper.tableLength = function(T)
 	local count = 0
 	for _ in pairs(T) do count = count + 1 end
 	return count
 end
 
+---@param x number
+---@param y number
+---@param z number
 helper.getIndex = function(x, y, z)
 	return tostring(x) .. "," .. tostring(y) .. "," .. tostring(z)
 end
 
+---@param pos1 vec3
+---@param pos2 vec3
 helper.isPosEqual = function(pos1, pos2)
 	return pos1.x == pos2.x and pos1.y == pos2.y and pos1.z == pos2.z
 end
 
+---@param pos vec3
+---@return {[string]: vec3}
 helper.getSurroundings = function(pos)
 	return {
 		[helper.getIndex(pos.x + 1, pos.y, pos.z)] = {x = pos.x + 1, y = pos.y, z = pos.z},
@@ -306,6 +327,8 @@ helper.getSurroundings = function(pos)
 	}
 end
 
+---@param currentPos vec3dir
+---@return vec3
 helper.getForwardPos = function(currentPos)
 	local newPos = {x = currentPos.x, y = currentPos.y, z = currentPos.z}
 	if currentPos.direction == EAST then
@@ -320,14 +343,22 @@ helper.getForwardPos = function(currentPos)
 	return newPos
 end
 
+---@param from vec3
+---@param to vec3
+---@return number
 helper.distance = function(from, to)
 	return math.abs(from.x - to.x) + math.abs(from.y - to.y) + math.abs(from.z - to.z)
 end
 
+---@param number number
+---@return integer
 helper.sign = function(number)
     return number > 0 and 1 or (number == 0 and 0 or -1)
 end
 
+---@param number number
+---@param a number
+---@param b number
 helper.inRange = function(number, a, b)
 	return number >= a and number <= b
 end
@@ -357,7 +388,7 @@ end
 helper.readOnlyTable = function(t)
 	local mt = {
 		__index = t,
-		__newindex = function(t,k,v)
+		__newindex = function(_, _, _)
 			error("Cannot write into a read-only table", 2)
 		end
 	}
@@ -905,10 +936,10 @@ path.pathfind = function(from, to, allBlocks, pathfindingType)
 		end
 	end
 
-	local path = {}
+	local almostFinalPath = {}
 	local counter = 1
 	while current ~= nil do
-		path[counter] = current
+		almostFinalPath[counter] = current
 		counter = counter + 1
 		current = data[helper.getIndex(current.x, current.y, current.z)].previous
 	end
@@ -916,7 +947,7 @@ path.pathfind = function(from, to, allBlocks, pathfindingType)
 	local reversedPath = {}
 	local newCounter = 1
 	for i=counter-1,1,-1 do
-		reversedPath[newCounter] = path[i]
+		reversedPath[newCounter] = almostFinalPath[i]
 		newCounter = newCounter + 1
 	end
 	reversedPath.length = newCounter-1;
@@ -1060,8 +1091,8 @@ ui.testRange = function(range, value)
 	end
 
 	local subRanges = helper.splitString(range, " ")
-	for _, range in ipairs(subRanges) do
-		local borders = helper.splitString(range, "..")
+	for _, subRange in ipairs(subRanges) do
+		local borders = helper.splitString(subRange, "..")
 		local tableLength = helper.tableLength(borders)
 		if tableLength == 2 then
 			local left = tonumber(borders[1])
@@ -1070,7 +1101,7 @@ ui.testRange = function(range, value)
 				return true
 			end
 		elseif tableLength == 1 then
-			local isLeft = string.sub(range, 0, 1) ~= "."
+			local isLeft = string.sub(subRange, 0, 1) ~= "."
 			local border = tonumber(borders[1])
 			local good = isLeft and (value >= border) or not isLeft and (value <= border)
 			if good then
@@ -1314,14 +1345,14 @@ end
 
 local function goToCoords(curBlock, pathfindingArea, pathfindingType)
 	local pos = wrapt.getPosition()
-	local path = path.pathfind(pos, curBlock, pathfindingArea, pathfindingType)
-	if not path then
+	local pth = path.pathfind(pos, curBlock, pathfindingArea, pathfindingType)
+	if not pth then
 		return false
 	end
 
-	for k=1,path.length do
-		if not (path[k].x == pos.x and path[k].y == pos.y and path[k].z == pos.z) then
-			stepTo(path[k].x, path[k].y, path[k].z)
+	for k=1,pth.length do
+		if not (pth[k].x == pos.x and pth[k].y == pos.y and pth[k].z == pos.z) then
+			stepTo(pth[k].x, pth[k].y, pth[k].z)
 		end
 	end
 	return true
@@ -1588,8 +1619,8 @@ local function makeNewChestInPlace(chestData, diggingArea)
 		if success then
 			break
 		end
-		local chestData = wrapt.getItemDetail(slots.get(CHEST_SLOT))
-		if not chestData then
+		local chestItemDetails = wrapt.getItemDetail(slots.get(CHEST_SLOT))
+		if not chestItemDetails then
 			helper.printWarning("Out of chests. Add chests to slot", slots.get(CHEST_SLOT))
 		end
 ---@diagnostic disable-next-line: undefined-field

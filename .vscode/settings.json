@@ -1,15 +1,47 @@
 {
+    "Lua.diagnostics.disable": [
+        "unused-local",
+        "lowercase-global",
+        "unused-function",
+        "need-check-nil"
+    ],
+    "Lua.diagnostics.severity": {
+        "redefined-local": "Warning"
+    },
     "Lua.diagnostics.globals": [
-        "turtle",
-        "fs",
+        "printError",
+        "sleep",
         "read",
-        "textutils",
-        "http",
         "write",
-        "term",
+        "print",
+        "colours",
         "colors",
-        "bit32",
+        "commands",
+        "disk",
+        "fs",
+        "gps",
+        "help",
+        "http",
+        "paintutils",
         "parallel",
-        "vector"
-    ]
+        "peripheral",
+        "rednet",
+        "redstone",
+        "keys",
+        "settings",
+        "shell",
+        "multishell",
+        "term",
+        "textutils",
+        "turtle",
+        "pocket",
+        "vector",
+        "bit32",
+        "window",
+        "_CC_DEFAULT_SETTINGS",
+        "_HOST",
+        "_VERSION",
+        "_"
+    ],
+    "Lua.runtime.version": "Lua 5.2"
 }
